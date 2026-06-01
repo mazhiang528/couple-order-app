@@ -416,10 +416,10 @@ function renderWelcome() {
       <h1>情侣点单系统</h1>
       <p class="subtitle">女朋友想吃什么？<br>一键下单，男友即刻收到通知！</p>
       <div class="role-btns">
-        <div class="role-btn boy" onclick="act_selectRole(''boyfriend'')">
+        <div class="role-btn boy" onclick="act_selectRole('boyfriend')">
           <span class="emoji">👦</span> 我是男朋友
         </div>
-        <div class="role-btn girl" onclick="act_selectRole(''girlfriend'')">
+        <div class="role-btn girl" onclick="act_selectRole('girlfriend')">
           <span class="emoji">👧</span> 我是女朋友
         </div>
       </div>
@@ -534,10 +534,10 @@ function renderBoyOrder(o) {
 
   let actions = "";
   if (o.status === "pending") {
-    actions = `<button class="btn btn-blue btn-sm" onclick="act_updateOrder(''` + o.id + `'',''accepted'')">✅ 接单</button>`;
+    actions = `<button class="btn btn-blue btn-sm" onclick="act_updateOrder('` + o.id + `','accepted')">✅ 接单</button>`;
   }
   if (o.status === "accepted") {
-    actions = `<button class="btn btn-primary btn-sm" onclick="act_updateOrder(''` + o.id + `'',''done'')">🎉 完成</button>`;
+    actions = `<button class="btn btn-primary btn-sm" onclick="act_updateOrder('` + o.id + `','done')">🎉 完成</button>`;
   }
 
   return `
@@ -574,8 +574,8 @@ function renderGirlMain() {
       </div>
 
       <div class="tab-bar">
-        <button class="tab-btn ` + (tab === "order" ? "active" : "") + `" onclick="state.girlTab=''order'';render()">🍽️ 我要点单</button>
-        <button class="tab-btn ` + (tab === "my-orders" ? "active" : "") + `" onclick="state.girlTab=''my-orders'';render()">📋 我的订单
+        <button class="tab-btn ` + (tab === "order" ? "active" : "") + `" onclick="state.girlTab='order';render()">🍽️ 我要点单</button>
+        <button class="tab-btn ` + (tab === "my-orders" ? "active" : "") + `" onclick="state.girlTab='my-orders';render()">📋 我的订单
           ` + (state.orders.filter(o => o.status === "pending").length > 0 ? ` (` + state.orders.filter(o => o.status === "pending").length + `)` : "") + `
         </button>
       </div>
@@ -592,7 +592,7 @@ function renderGirlOrderPanel() {
   return `
     <div class="menu-grid">
       ` + MENU_ITEMS.map(item => `
-        <div class="menu-item" onclick="act_quickOrder(''` + item.name + `'')">
+        <div class="menu-item" onclick="act_quickOrder('` + item.name + `')">
           <span class="menu-emoji">` + item.emoji + `</span>` + item.name + `
         </div>
       `).join("") + `
