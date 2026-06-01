@@ -1,0 +1,19 @@
+﻿{
+    "name":  "couple-order-app",
+    "version":  "1.0.0",
+    "description":  "",
+    "main":  "server.js",
+    "scripts":  {
+                    "test":  "echo \"Error: no test specified\" \u0026\u0026 exit 1",
+                    "start":  "node server.js"
+                },
+    "keywords":  [
+
+                 ],
+    "author":  "",
+    "license":  "ISC",
+    "type":  "commonjs",
+    "dependencies":  {
+                         "ws":  "^8.21.0"
+                     }
+}

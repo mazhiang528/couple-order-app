@@ -1,0 +1,10 @@
+﻿services:
+  - type: web
+    name: couple-order-app
+    env: node
+    buildCommand: npm install
+    startCommand: node server.js
+    plan: free
+    envVars:
+      - key: PORT
+        value: "10000"
