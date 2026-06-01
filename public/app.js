@@ -1,4 +1,4 @@
-﻿// ===== 情侣点单系统 - 前端应用 =====
+﻿// ===== 情侣点单系统 - 美团风格 =====
 const MENU_ITEMS = [
   { emoji: "🍜", name: "火鸡面" },
   { emoji: "🍕", name: "披萨" },
@@ -16,8 +16,8 @@ const MENU_ITEMS = [
 
 // ===== 状态管理 =====
 let state = {
-  screen: "welcome", // welcome | setup-boy | setup-girl | boy-main | girl-main
-  role: null,        // "boyfriend" | "girlfriend"
+  screen: "welcome",
+  role: null,
   pairId: null,
   password: null,
   partnerConnected: false,
@@ -25,10 +25,74 @@ let state = {
   ws: null,
   reconnectTimer: null,
   soundEnabled: true,
-  girlTab: "order", // "order" | "my-orders"
+  girlTab: "order",
+  notificationPermission: "default",
+  bannerOrderId: null,
 };
 
-// ===== WebSocket =====
+// ========== 浏览器通知 ==========
+function requestNotificationPermission() {
+  if (!("Notification" in window)) return;
+  if (Notification.permission === "granted") {
+    state.notificationPermission = "granted";
+    return;
+  }
+  if (Notification.permission === "denied") {
+    state.notificationPermission = "denied";
+    return;
+  }
+  setTimeout(() => {
+    Notification.requestPermission().then(perm => {
+      state.notificationPermission = perm;
+    });
+  }, 2000);
+}
+
+function showBrowserNotification(title, body) {
+  if (!("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+  try {
+    const n = new Notification(title, {
+      body,
+      icon: "data:image/svg+xml,%3Csvg xmlns=''http://www.w3.org/2000/svg'' viewBox=''0 0 100 100''%3E%3Ctext y=''.9em'' font-size=''80''%3E💕%3C/text%3E%3C/svg%3E",
+      tag: "couple-order",
+      requireInteraction: true,
+      vibrate: [200, 100, 200, 100, 200],
+    });
+    n.onclick = () => { window.focus(); n.close(); };
+    setTimeout(() => n.close(), 6000);
+  } catch (e) { /* ignore */ }
+}
+
+function updatePageTitle() {
+  const pendingCount = state.orders.filter(o => o.status === "pending").length;
+  if (pendingCount > 0 && state.role === "boyfriend") {
+    document.title = `🔔(${pendingCount}) 情侣点单`;
+  } else if (pendingCount > 0 && state.role === "girlfriend") {
+    document.title = `(${pendingCount}) 情侣点单`;
+  } else {
+    document.title = "❤️ 情侣点单";
+  }
+}
+
+// ========== 新订单横幅（男友端） ==========
+function showOrderBanner(order) {
+  state.bannerOrderId = order.id;
+  render();
+  setTimeout(() => {
+    if (state.bannerOrderId === order.id) {
+      state.bannerOrderId = null;
+      render();
+    }
+  }, 8000);
+}
+
+function dismissBanner() {
+  state.bannerOrderId = null;
+  render();
+}
+
+// ========== WebSocket ==========
 function connect() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   const wsUrl = protocol + "//" + location.host;
@@ -37,7 +101,6 @@ function connect() {
 
   ws.onopen = () => {
     console.log("[WS] 已连接");
-    // 重连后自动恢复状态
     if (state.role === "boyfriend" && state.pairId && state.password) {
       send({ type: "create_pair", password: state.password });
     } else if (state.role === "girlfriend" && state.pairId && state.password) {
@@ -55,9 +118,7 @@ function connect() {
     scheduleReconnect();
   };
 
-  ws.onerror = () => {
-    ws.close();
-  };
+  ws.onerror = () => { ws.close(); };
 }
 
 function scheduleReconnect() {
@@ -74,7 +135,7 @@ function send(data) {
   }
 }
 
-// ===== 消息处理 =====
+// ========== 消息处理 ==========
 function handleMessage(msg) {
   switch (msg.type) {
     case "pair_created":
@@ -104,30 +165,47 @@ function handleMessage(msg) {
 
     case "new_order":
       state.orders.unshift(msg.order);
-      render();
-      playSound("order");
+      updatePageTitle();
+      showOrderBanner(msg.order);
+      playSound("new_order");
       vibrate();
+      showBrowserNotification(
+        "🔔 女朋友下单啦！",
+        msg.order.item + (msg.order.quantity > 1 ? " x" + msg.order.quantity : "") + (msg.order.note ? " — " + msg.order.note : "")
+      );
+      render();
       break;
 
     case "order_placed":
       state.orders.unshift(msg.order);
+      updatePageTitle();
       render();
-      toast("下单成功！等待男朋友接单~");
+      toast("下单成功！等待男朋友接单 ⏳");
+      playSound("order");
       break;
 
     case "order_updated":
       const idx = state.orders.findIndex(o => o.id === msg.order.id);
       if (idx !== -1) state.orders[idx] = msg.order;
+      updatePageTitle();
+      if (state.bannerOrderId === msg.order.id && msg.order.status !== "pending") {
+        state.bannerOrderId = null;
+      }
       render();
       if (state.role === "girlfriend") {
-        const labels = { accepted: "男朋友已接单✅", done: "已完成✅" };
+        const labels = { accepted: "男朋友已接单 ✅", done: "已完成 ✅" };
         toast(labels[msg.order.status] || "状态已更新");
         playSound("update");
+        // 女朋友端也通知
+        if (msg.order.status === "accepted") {
+          showBrowserNotification("✅ 男朋友接单了！", "你的 " + msg.order.item + " 已被接单，马上安排~");
+        }
       }
       break;
 
     case "orders_list":
       state.orders = msg.orders;
+      updatePageTitle();
       render();
       break;
 
@@ -149,12 +227,15 @@ function resetState() {
   state.password = null;
   state.partnerConnected = false;
   state.orders = [];
+  state.bannerOrderId = null;
+  document.title = "❤️ 情侣点单";
 }
 
 // ===== 动作函数 =====
 function act_selectRole(role) {
   state.role = role;
   state.screen = role === "boyfriend" ? "setup-boy" : "setup-girl";
+  if (role === "boyfriend") requestNotificationPermission();
   render();
 }
 
@@ -163,6 +244,7 @@ function act_createPair() {
   if (pw.length < 4) { toast("密码至少4位"); return; }
   state.password = pw;
   send({ type: "create_pair", password: pw });
+  requestNotificationPermission();
 }
 
 function act_joinPair() {
@@ -173,6 +255,7 @@ function act_joinPair() {
   state.pairId = code;
   state.password = pw;
   send({ type: "join_pair", pairId: code, password: pw });
+  requestNotificationPermission();
 }
 
 function act_placeOrder(item, note = "", quantity = 1) {
@@ -181,7 +264,7 @@ function act_placeOrder(item, note = "", quantity = 1) {
 
 function act_quickOrder(item) {
   act_placeOrder(item);
-  toast(`已下单：${item}`);
+  toast("已下单：" + item);
 }
 
 function act_customOrder() {
@@ -189,7 +272,7 @@ function act_customOrder() {
   const noteInput = document.getElementById("custom-note");
   const qtyInput = document.getElementById("custom-qty");
   const item = input.value.trim();
-  if (!item) { toast("请输入想要的东西"); return; }
+  if (!item) { toast("请输入想点的东西"); return; }
   const note = noteInput ? noteInput.value.trim() : "";
   const qty = qtyInput ? parseInt(qtyInput.value) || 1 : 1;
   act_placeOrder(item, note, qty);
@@ -224,51 +307,48 @@ function act_toggleSound() {
   render();
 }
 
-// ===== 音效 =====
+function act_dismissBanner() {
+  dismissBanner();
+}
+
+// ===== 音效（增强版） =====
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
 function playSound(type) {
   if (!state.soundEnabled) return;
   try {
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    gain.gain.value = 0.1;
-
-    if (type === "order") {
-      osc.frequency.value = 800;
-      osc.type = "sine";
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.15);
-      setTimeout(() => {
-        const o2 = audioCtx.createOscillator();
-        const g2 = audioCtx.createGain();
-        o2.connect(g2);
-        g2.connect(audioCtx.destination);
-        g2.gain.value = 0.1;
-        o2.frequency.value = 1000;
-        o2.type = "sine";
-        o2.start();
-        o2.stop(audioCtx.currentTime + 0.2);
-      }, 150);
+    if (type === "new_order") {
+      // 美团风格：叮~叮咚~
+      playTone(880, 0.12, 0, 0.1);
+      setTimeout(() => playTone(1100, 0.18, 0, 0.1), 120);
+      setTimeout(() => playTone(1320, 0.25, 0, 0.08), 300);
+    } else if (type === "order") {
+      playTone(660, 0.15, 0, 0.1);
+      setTimeout(() => playTone(880, 0.2, 0, 0.1), 150);
     } else if (type === "connect") {
-      osc.frequency.value = 523;
-      osc.type = "sine";
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.3);
+      playTone(523, 0.3, 0, 0.1);
     } else if (type === "update") {
-      osc.frequency.value = 660;
-      osc.type = "sine";
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.1);
+      playTone(660, 0.15, 0, 0.1);
     }
   } catch (e) { /* ignore */ }
 }
 
+function playTone(freq, duration, delay, volume) {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  gain.gain.value = volume || 0.1;
+  osc.frequency.value = freq;
+  osc.type = "sine";
+  osc.start(audioCtx.currentTime + (delay || 0));
+  osc.stop(audioCtx.currentTime + (delay || 0) + duration);
+}
+
+// ===== 振动 =====
 function vibrate() {
   if (navigator.vibrate) {
-    navigator.vibrate([100, 50, 100]);
+    navigator.vibrate([200, 80, 200, 80, 300]);
   }
 }
 
@@ -294,18 +374,38 @@ function render() {
     case "girl-main": app.innerHTML = renderGirlMain(); break;
   }
   bindEvents();
+  updatePageTitle();
 }
 
 function bindEvents() {
-  // 回车提交
   document.querySelectorAll(".input").forEach(inp => {
     inp.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         if (state.screen === "setup-boy") act_createPair();
-        else if (state.screen === "setup-girl") act_joinPair();
+        if (state.screen === "setup-girl") act_joinPair();
       }
     });
   });
+  const customInput = document.getElementById("custom-input");
+  if (customInput) {
+    customInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") act_customOrder();
+    });
+  }
+  const bannerDismiss = document.getElementById("banner-dismiss");
+  if (bannerDismiss) {
+    bannerDismiss.addEventListener("click", act_dismissBanner);
+  }
+  const banner = document.querySelector(".order-banner");
+  if (banner) {
+    banner.addEventListener("click", function(e) {
+      if (e.target.id !== "banner-dismiss") {
+        state.bannerOrderId = null;
+        render();
+        document.querySelector(".order-list")?.scrollIntoView({ behavior: "smooth" });
+      }
+    });
+  }
 }
 
 // ===== 欢迎页 =====
@@ -314,12 +414,12 @@ function renderWelcome() {
     <div class="welcome">
       <div class="heart">💕</div>
       <h1>情侣点单系统</h1>
-      <p class="subtitle">女朋友想吃什么？<br>一键下单，男友即刻收到！</p>
+      <p class="subtitle">女朋友想吃什么？<br>一键下单，男友即刻收到通知！</p>
       <div class="role-btns">
-        <div class="role-btn boy" onclick="act_selectRole('boyfriend')">
+        <div class="role-btn boy" onclick="act_selectRole(''boyfriend'')">
           <span class="emoji">👦</span> 我是男朋友
         </div>
-        <div class="role-btn girl" onclick="act_selectRole('girlfriend')">
+        <div class="role-btn girl" onclick="act_selectRole(''girlfriend'')">
           <span class="emoji">👧</span> 我是女朋友
         </div>
       </div>
@@ -334,7 +434,7 @@ function renderSetupBoy() {
       <h2>🔐 设置配对密码</h2>
       <div class="card">
         <p style="margin-bottom:12px;color:var(--gray-600);font-size:14px">
-          请设置一个密码，女朋友需要通过这个密码和你配对。
+          设置一个密码，女朋友用它来和你配对。
         </p>
         <input class="input" id="password-input" type="password" placeholder="设置密码（至少4位）" autocomplete="off">
         <button class="btn btn-primary btn-block" style="margin-top:12px" onclick="act_createPair()">
@@ -342,7 +442,7 @@ function renderSetupBoy() {
         </button>
       </div>
       <div class="info-box">
-        💡 创建后你会得到一个6位配对码，把配对码和密码告诉女朋友即可。
+        💡 创建后你会得到一个6位配对码<br>把配对码和密码告诉女朋友即可
       </div>
     </div>`;
 }
@@ -371,40 +471,57 @@ function renderBoyMain() {
   const dotClass = state.partnerConnected ? "connected" : "waiting";
   const dotLabel = state.partnerConnected ? "已连接" : "等待中...";
   const pendingCount = state.orders.filter(o => o.status === "pending").length;
+  const bannerOrder = state.bannerOrderId
+    ? state.orders.find(o => o.id === state.bannerOrderId)
+    : null;
 
   return `
     <div class="order-list">
       <div class="top-bar">
-        <span class="title">👦 男朋友 · 订单接收</span>
+        <span class="title">👦 男朋友 · 接单中心</span>
         <div style="display:flex;align-items:center;gap:8px">
-          <button class="sound-btn" onclick="act_toggleSound()">${state.soundEnabled ? "🔔" : "🔕"}</button>
-          <span class="connected-badge"><span class="status-dot ${dotClass}"></span>${dotLabel}</span>
+          <button class="sound-btn" onclick="act_toggleSound()">` + (state.soundEnabled ? "🔔" : "🔕") + `</button>
+          <span class="connected-badge">
+            <span class="status-dot ` + dotClass + `"></span>` + dotLabel + `
+          </span>
         </div>
       </div>
+
+      ` + (bannerOrder ? `
+        <div class="order-banner" id="order-banner">
+          <div class="banner-icon">🔔</div>
+          <div class="banner-content">
+            <div class="banner-title">女朋友刚刚下单了！</div>
+            <div class="banner-detail">📦 <strong>` + escapeHtml(bannerOrder.item) + `</strong>` + (bannerOrder.quantity > 1 ? ` x` + bannerOrder.quantity : "") + `</div>
+            ` + (bannerOrder.note ? `<div class="banner-note">📝 ` + escapeHtml(bannerOrder.note) + `</div>` : "") + `
+          </div>
+          <button class="banner-dismiss" id="banner-dismiss">✕</button>
+        </div>
+      ` : "") + `
 
       <div class="card pair-code-display">
         <div style="font-size:13px;color:var(--gray-600)">你的配对码</div>
-        <div class="code">${state.pairId}</div>
+        <div class="code">` + state.pairId + `</div>
         <div class="hint">告诉女朋友这个配对码和密码</div>
-        ${!state.partnerConnected ? '<div style="margin-top:8px;color:var(--yellow);font-size:14px">⏳ 等待女朋友连接...</div>' : ''}
+        ` + (!state.partnerConnected ? '<div style="margin-top:8px;color:var(--yellow);font-size:14px">⏳ 等待女朋友连接...</div>' : "") + `
       </div>
 
-      ${pendingCount > 0 ? `
-        <div style="background:var(--pink);color:#fff;padding:8px 16px;border-radius:20px;text-align:center;font-weight:600;font-size:14px">
-          🔔 ${pendingCount} 条新订单待处理
+      ` + (pendingCount > 0 ? `
+        <div class="pending-alert">
+          🔔 ` + pendingCount + ` 条新订单待处理
         </div>
-      ` : ""}
+      ` : "") + `
 
       <h2>📋 订单列表</h2>
 
-      ${state.orders.length === 0 ? `
+      ` + (state.orders.length === 0 ? `
         <div class="empty">
           <div class="empty-emoji">📭</div>
           还没有订单，等待女朋友下单吧~
         </div>
-      ` : state.orders.map(o => renderBoyOrder(o)).join("")}
+      ` : state.orders.map(o => renderBoyOrder(o)).join("")) + `
 
-      <button class="btn btn-outline btn-block" style="margin-top:auto" onclick="act_leavePair()">
+      <button class="btn btn-outline btn-block" style="margin-top:12px" onclick="act_leavePair()">
         退出配对
       </button>
     </div>`;
@@ -413,30 +530,28 @@ function renderBoyMain() {
 function renderBoyOrder(o) {
   const time = new Date(o.time).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
   const statusLabels = { pending: "待处理", accepted: "已接单", done: "已完成" };
-  const statusBadge = `<span class="badge badge-${o.status}">${statusLabels[o.status]}</span>`;
+  const statusBadge = `<span class="badge badge-` + o.status + `">` + statusLabels[o.status] + `</span>`;
 
   let actions = "";
   if (o.status === "pending") {
-    actions = `
-      <button class="btn btn-blue btn-sm" onclick="act_updateOrder('${o.id}','accepted')">✅ 接单</button>`;
+    actions = `<button class="btn btn-blue btn-sm" onclick="act_updateOrder(''` + o.id + `'',''accepted'')">✅ 接单</button>`;
   }
   if (o.status === "accepted") {
-    actions = `
-      <button class="btn btn-primary btn-sm" onclick="act_updateOrder('${o.id}','done')">🎉 完成</button>`;
+    actions = `<button class="btn btn-primary btn-sm" onclick="act_updateOrder(''` + o.id + `'',''done'')">🎉 完成</button>`;
   }
 
   return `
-    <div class="order-card ${o.status}">
+    <div class="order-card ` + o.status + `">
       <div class="order-header">
         <div>
-          <span class="order-item">${o.item}</span>
-          ${o.quantity > 1 ? `<span class="order-qty"> x${o.quantity}</span>` : ""}
+          <span class="order-item">` + escapeHtml(o.item) + `</span>
+          ` + (o.quantity > 1 ? `<span class="order-qty"> x` + o.quantity + `</span>` : "") + `
         </div>
-        ${statusBadge}
+        ` + statusBadge + `
       </div>
-      ${o.note ? `<div class="order-note">📝 ${escapeHtml(o.note)}</div>` : ""}
-      <div class="order-time">🕐 ${time}</div>
-      ${actions ? `<div class="order-actions">${actions}</div>` : ""}
+      ` + (o.note ? `<div class="order-note">📝 ` + escapeHtml(o.note) + `</div>` : "") + `
+      <div class="order-time">🕐 ` + time + `</div>
+      ` + (actions ? `<div class="order-actions">` + actions + `</div>` : "") + `
     </div>`;
 }
 
@@ -444,28 +559,30 @@ function renderBoyOrder(o) {
 function renderGirlMain() {
   const tab = state.girlTab;
   const dotClass = state.partnerConnected ? "connected" : "waiting";
-  const dotLabel = state.partnerConnected ? "已连接" : "未连接";
+  const dotLabel = state.partnerConnected ? "已连接" : "等待男朋友...";
 
   return `
     <div class="order-panel">
       <div class="top-bar">
         <span class="title">👧 女朋友 · 点单</span>
         <div style="display:flex;align-items:center;gap:8px">
-          <button class="sound-btn" onclick="act_toggleSound()">${state.soundEnabled ? "🔔" : "🔕"}</button>
-          <span class="connected-badge"><span class="status-dot ${dotClass}"></span>${dotLabel}</span>
+          <button class="sound-btn" onclick="act_toggleSound()">` + (state.soundEnabled ? "🔔" : "🔕") + `</button>
+          <span class="connected-badge">
+            <span class="status-dot ` + dotClass + `"></span>` + dotLabel + `
+          </span>
         </div>
       </div>
 
       <div class="tab-bar">
-        <button class="tab-btn ${tab === 'order' ? 'active' : ''}" onclick="state.girlTab='order';render()">🍽️ 我要点单</button>
-        <button class="tab-btn ${tab === 'my-orders' ? 'active' : ''}" onclick="state.girlTab='my-orders';render()">📋 我的订单
-          ${state.orders.filter(o => o.status === 'pending').length > 0 ? ` (${state.orders.filter(o => o.status === 'pending').length})` : ''}
+        <button class="tab-btn ` + (tab === "order" ? "active" : "") + `" onclick="state.girlTab=''order'';render()">🍽️ 我要点单</button>
+        <button class="tab-btn ` + (tab === "my-orders" ? "active" : "") + `" onclick="state.girlTab=''my-orders'';render()">📋 我的订单
+          ` + (state.orders.filter(o => o.status === "pending").length > 0 ? ` (` + state.orders.filter(o => o.status === "pending").length + `)` : "") + `
         </button>
       </div>
 
-      ${tab === "order" ? renderGirlOrderPanel() : renderGirlMyOrders()}
+      ` + (tab === "order" ? renderGirlOrderPanel() : renderGirlMyOrders()) + `
 
-      <button class="btn btn-outline btn-block" style="margin-top:auto" onclick="act_leavePair()">
+      <button class="btn btn-outline btn-block" style="margin-top:12px" onclick="act_leavePair()">
         退出配对
       </button>
     </div>`;
@@ -474,18 +591,20 @@ function renderGirlMain() {
 function renderGirlOrderPanel() {
   return `
     <div class="menu-grid">
-      ${MENU_ITEMS.map(item => `
-        <div class="menu-item" onclick="act_quickOrder('${item.name}')">
-          <span class="menu-emoji">${item.emoji}</span>${item.name}
+      ` + MENU_ITEMS.map(item => `
+        <div class="menu-item" onclick="act_quickOrder(''` + item.name + `'')">
+          <span class="menu-emoji">` + item.emoji + `</span>` + item.name + `
         </div>
-      `).join("")}
+      `).join("") + `
     </div>
 
     <div class="custom-order">
-      <div style="font-weight:600;font-size:15px">✨ 自定义点单</div>
-      <input class="input" id="custom-input" placeholder="想要什么？" autocomplete="off">
-      <input class="input" id="custom-note" placeholder="备注（选填）" autocomplete="off">
-      <div style="display:flex;gap:8px;align-items:center">
+      <div style="font-weight:600;font-size:15px;margin-bottom:8px">✨ 自定义点单</div>
+      <div style="display:flex;gap:8px">
+        <input class="input" id="custom-input" placeholder="想吃什么？" style="flex:1" autocomplete="off">
+        <input class="input" id="custom-note" placeholder="备注（选填）" style="flex:1" autocomplete="off">
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
         <span style="font-size:14px;color:var(--gray-600)">数量：</span>
         <input class="input" id="custom-qty" type="number" value="1" min="1" max="99" style="width:70px;text-align:center" autocomplete="off">
         <button class="btn btn-primary" style="flex:1" onclick="act_customOrder()">📩 下单</button>
@@ -505,20 +624,20 @@ function renderGirlMyOrders() {
 
   return `
     <div class="my-orders">
-      ${state.orders.map(o => {
+      ` + state.orders.map(o => {
         const time = new Date(o.time).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
         const statusEmoji = { pending: "⏳", accepted: "✅", done: "🎉" };
         const statusLabel = { pending: "等待接单", accepted: "已接单", done: "已完成" };
         return `
           <div class="my-order-card">
             <div>
-              <div style="font-weight:600">${o.item} ${o.quantity > 1 ? `x${o.quantity}` : ""}</div>
-              ${o.note ? `<div style="font-size:12px;color:var(--gray-600);margin-top:2px">📝 ${escapeHtml(o.note)}</div>` : ""}
-              <div style="font-size:12px;color:var(--gray-400);margin-top:2px">🕐 ${time}</div>
+              <div style="font-weight:600">` + escapeHtml(o.item) + ` ` + (o.quantity > 1 ? `x` + o.quantity : "") + `</div>
+              ` + (o.note ? `<div style="font-size:12px;color:var(--gray-600);margin-top:2px">📝 ` + escapeHtml(o.note) + `</div>` : "") + `
+              <div style="font-size:12px;color:var(--gray-400);margin-top:2px">🕐 ` + time + `</div>
             </div>
-            <span class="badge badge-${o.status}">${statusEmoji[o.status]} ${statusLabel[o.status]}</span>
+            <span class="badge badge-` + o.status + `">` + statusEmoji[o.status] + ` ` + statusLabel[o.status] + `</span>
           </div>`;
-      }).join("")}
+      }).join("") + `
     </div>`;
 }
 
@@ -530,5 +649,9 @@ function escapeHtml(str) {
 }
 
 // ===== 启动 =====
+requestNotificationPermission();
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) updatePageTitle();
+});
 connect();
 render();

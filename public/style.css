@@ -291,3 +291,146 @@ body {
 .tab-btn.active { background: #fff; color: var(--pink); box-shadow: var(--shadow); }
 
 .sound-btn { background: none; border: none; font-size: 24px; cursor: pointer; padding: 4px; }
+
+/* ===== 新订单横幅（美团风格） ===== */
+.order-banner {
+  background: linear-gradient(135deg, #ff6b6b 0%, #ff8787 100%);
+  color: #fff;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 4px 20px rgba(255,107,107,.4);
+  animation: bannerSlideIn .4s ease, bannerPulse 2s ease-in-out infinite;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.order-banner::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.15) 50%, transparent 100%);
+  animation: bannerShine 2s ease-in-out infinite;
+}
+
+@keyframes bannerSlideIn {
+  from { opacity: 0; transform: translateY(-20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes bannerPulse {
+  0%,100% { box-shadow: 0 4px 20px rgba(255,107,107,.4); }
+  50% { box-shadow: 0 4px 30px rgba(255,107,107,.7); }
+}
+
+@keyframes bannerShine {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.banner-icon {
+  font-size: 32px;
+  flex-shrink: 0;
+  animation: bannerIconBounce .6s ease infinite alternate;
+}
+
+@keyframes bannerIconBounce {
+  from { transform: translateY(0); }
+  to { transform: translateY(-4px); }
+}
+
+.banner-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.banner-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.banner-detail {
+  font-size: 14px;
+  opacity: .95;
+}
+
+.banner-note {
+  font-size: 12px;
+  opacity: .8;
+  margin-top: 2px;
+}
+
+.banner-dismiss {
+  background: rgba(255,255,255,.25);
+  border: none;
+  color: #fff;
+  font-size: 18px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .2s;
+  z-index: 1;
+}
+
+.banner-dismiss:hover {
+  background: rgba(255,255,255,.4);
+}
+
+/* ===== 待处理订单提醒 ===== */
+.pending-alert {
+  background: var(--pink);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 20px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 12px;
+  animation: pendingPulse 2s ease-in-out infinite;
+}
+
+@keyframes pendingPulse {
+  0%,100% { opacity: 1; }
+  50% { opacity: .8; }
+}
+
+/* ===== 订单卡片增强 ===== */
+.order-card.pending {
+  border-left: 4px solid var(--pink);
+  animation: cardHighlight .6s ease;
+}
+
+@keyframes cardHighlight {
+  from { background: #fff0f3; }
+  to { background: #fff; }
+}
+
+.order-card.accepted {
+  border-left: 4px solid var(--blue);
+}
+
+.order-card.done {
+  border-left: 4px solid var(--green);
+}
+
+.order-qty {
+  display: inline-block;
+  background: var(--gray-200);
+  color: var(--gray-600);
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
