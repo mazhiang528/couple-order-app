@@ -2,9 +2,9 @@
   - type: web
     name: couple-order-app
     env: node
+    repo: https://github.com/mazhiang528/couple-order-app
+    branch: master
     buildCommand: npm install
     startCommand: node server.js
     plan: free
-    envVars:
-      - key: PORT
-        value: "10000"
+    region: singapore
